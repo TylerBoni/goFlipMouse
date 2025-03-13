@@ -1,0 +1,2 @@
+go build -o mouse
+sudo DEBUG=true ./mouse
