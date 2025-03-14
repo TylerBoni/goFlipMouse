@@ -38,7 +38,7 @@ func setupLogging() (*os.File, error) {
 }
 
 // var DEBUG bool = os.Getenv("DEBUG") != ""
-const DEBUG = false
+const DEBUG = true
 
 func dprint(format string, v ...interface{}) {
 	if DEBUG {
@@ -453,7 +453,7 @@ func ProcessEvent(event *evdev.InputEvent, virtualMouse uinput.Mouse, km KeyMapp
 		}
 		return MuteEvent
 	default:
-		return MuteEvent
+		return PassThruEvent
 	}
 
 }
@@ -529,15 +529,13 @@ func main() {
 				// Process the event
 				result := ProcessEvent(event, mouse, mapping, d.name)
 				if result == PassThruEvent {
-					if event.Type == EvKey {
-						switch event.Code {
-						}
-						if event.Value == 1 {
-							keyboard.KeyDown(int(event.Code))
-						}
-						if event.Value == 0 {
-							keyboard.KeyUp(int(event.Code))
-						}
+					switch event.Code {
+					}
+					if event.Value == 1 {
+						keyboard.KeyDown(int(event.Code))
+					}
+					if event.Value == 0 {
+						keyboard.KeyUp(int(event.Code))
 					}
 				} else {
 					dprint("Intercepted event. Result: %d\n", result)
