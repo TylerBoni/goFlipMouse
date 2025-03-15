@@ -65,25 +65,25 @@ func GetPhoneKeyMapping() KeyMapping {
 		LeftKey:       105,
 		RightKey:      106,
 	}
-	return KeyMapping{
-		ExitKey:         ka.EndCallKey,
-		EnterKey:        ka.EnterKey,
-		ToggleMouseKey:  ka.StarKey,
-		ToggleScrollKey: ka.LeftKey,
-		ClickKey:        ka.EnterKey,
-		DragKey:         ka.SoftRightKey,
-		FasterKey:       ka.VolumeDownKey,
-		SlowerKey:       ka.VolumeUpKey,
-		UpKey:           ka.UpKey,
-		DownKey:         ka.DownKey,
-		LeftKey:         ka.LeftKey,
-		RightKey:        ka.RightKey,
-		ScrollUpKey:     ka.SoftLeftKey,
-		ScrollDownKey:   ka.CallKey,
-		// Disabled
-		ScrollLeftKey:  0,
-		ScrollRightKey: 0,
-	}
+	n := KeyMapping{}
+	n.ExitKey = ka.EndCallKey
+	n.EnterKey = ka.EnterKey
+	n.ToggleMouseKey = ka.StarKey
+	n.ClickKey = ka.EnterKey
+	n.DragKey = ka.SoftRightKey
+	n.FasterKey = ka.VolumeDownKey
+	n.SlowerKey = ka.VolumeUpKey
+	n.UpKey = ka.UpKey
+	n.DownKey = ka.DownKey
+	n.LeftKey = ka.LeftKey
+	n.RightKey = ka.RightKey
+	n.ScrollUpKey = ka.SoftLeftKey
+	n.ScrollDownKey = ka.CallKey
+	// Disabled
+	n.ScrollLeftKey = 0
+	n.ScrollRightKey = 0
+
+	return n
 }
 
 // RegisterPhoneKeyMapping registers phone keyboard mapping with the provider

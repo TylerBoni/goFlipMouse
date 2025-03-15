@@ -12,7 +12,7 @@ import (
 
 	"github.com/bendahl/uinput"
 	"github.com/goFlipMouse/keymaps"
-	evdev "github.com/gvalkov/golang-evdev"
+	evdev "github.com/grafov/evdev"
 )
 
 // Constants for Linux events
@@ -100,21 +100,30 @@ func (l *Logger) Debug(format string, v ...interface{}) {
 
 // MouseState represents the state of the mouse controller
 type MouseState struct {
-	VelocityX    float64
-	VelocityY    float64
-	MaxSpeed     float64
-	SpeedMulti   float64
-	Acceleration float64
-	Friction     float64
+	VelocityX       float64
+	VelocityY       float64
+	ScrollVelocityX float64
+	ScrollVelocityY float64
+	MaxSpeed        float64
+	ScrollMaxSpeed  float64
+	SpeedMulti      float64
+	ScrollMulti     float64
+	Acceleration    float64
+	Friction        float64
 
-	LeftBtnPressed   bool
-	RightBtnPressed  bool
-	DragToggleActive bool
-	UpKeyActive      bool
-	DownKeyActive    bool
-	LeftKeyActive    bool
-	RightKeyActive   bool
-	MouseMode        bool
+	MouseMode bool
+
+	LeftBtnPressed    bool
+	RightBtnPressed   bool
+	DragToggleActive  bool
+	UpKeyActive       bool
+	DownKeyActive     bool
+	LeftKeyActive     bool
+	RightKeyActive    bool
+	ScrollUpActive    bool
+	ScrollDownActive  bool
+	ScrollLeftActive  bool
+	ScrollRightActive bool
 
 	ToggleKeyDown     bool
 	ToggleKeyDownTime time.Time
@@ -123,12 +132,16 @@ type MouseState struct {
 // NewMouseState creates a new mouse state with default values
 func NewMouseState() *MouseState {
 	return &MouseState{
-		VelocityX:    0,
-		VelocityY:    0,
-		MaxSpeed:     4,
-		SpeedMulti:   1,
-		Acceleration: 0.3,
-		Friction:     0.85,
+		VelocityX:       0,
+		VelocityY:       0,
+		ScrollVelocityX: 0,
+		ScrollVelocityY: 0,
+		MaxSpeed:        4,
+		ScrollMaxSpeed:  30,
+		SpeedMulti:      1,
+		ScrollMulti:     1,
+		Acceleration:    0.3,
+		Friction:        0.85,
 
 		MouseMode:       false,
 		LeftBtnPressed:  false,
@@ -152,43 +165,71 @@ func NewMouseController(mouse uinput.Mouse, logger *Logger) *MouseController {
 	}
 }
 
-// AccelerateAndMove updates velocity based on input direction and moves the mouse
-func (mc *MouseController) AccelerateAndMove(inputX, inputY float64) {
-	actualSpeed := mc.State.MaxSpeed * mc.State.SpeedMulti
+func NewVirtualMouse() uinput.Mouse {
+	mouse, err := uinput.CreateMouse("/dev/uinput", []byte("goFlipMouse"))
+	if err != nil {
+		panic(err)
+	}
+	return mouse
+}
+
+func (mc *MouseController) AccelerateVelocity(inputX, inputY float64, maxSpeed float64, velocityX, velocityY float64) (float64, float64) {
+	actualSpeed := maxSpeed
 
 	// Apply acceleration in the input direction
 	if inputX != 0 {
-		mc.State.VelocityX += inputX * mc.State.Acceleration
+		velocityX += inputX * mc.State.Acceleration
 	} else {
 		// Apply friction when no input
-		mc.State.VelocityX *= mc.State.Friction
+		velocityX *= mc.State.Friction
 	}
 
 	if inputY != 0 {
-		mc.State.VelocityY += inputY * mc.State.Acceleration
+		velocityY += inputY * mc.State.Acceleration
 	} else {
-		mc.State.VelocityY *= mc.State.Friction
+		velocityY *= mc.State.Friction
 	}
 
 	// Clamp to maximum speed
-	speed := math.Sqrt(mc.State.VelocityX*mc.State.VelocityX + mc.State.VelocityY*mc.State.VelocityY)
+	speed := math.Sqrt(velocityX*velocityX + velocityY*velocityY)
 	if speed > actualSpeed {
 		scale := actualSpeed / speed
-		mc.State.VelocityX *= scale
-		mc.State.VelocityY *= scale
+		velocityX *= scale
+		velocityY *= scale
 	}
 
 	// Cut off tiny movements
-	if math.Abs(mc.State.VelocityX) < 0.1 {
-		mc.State.VelocityX = 0
-	}
-	if math.Abs(mc.State.VelocityY) < 0.1 {
-		mc.State.VelocityY = 0
-	}
+/*
+	if math.Abs(velocityX) < 0.1 {
+		velocityX = 0
+		}
 
+		if math.Abs(velocityY) < 0.1 {
+			velocityY = 0
+	} */
+
+	return velocityX, velocityY
+}
+
+// AccelerateAndMove calculates acceleration and applies movement to the mouse
+func (mc *MouseController) AccelerateAndMove(inputX, inputY float64) {
+	mc.State.VelocityX, mc.State.VelocityY = mc.AccelerateVelocity(inputX, inputY, mc.State.MaxSpeed, mc.State.VelocityX, mc.State.VelocityY)
 	// Move the mouse if there's any velocity
 	if mc.State.VelocityX != 0 || mc.State.VelocityY != 0 {
-		mc.Mouse.Move(int32(mc.State.VelocityX), int32(mc.State.VelocityY))
+		mc.Mouse.Move(int32(mc.State.VelocityX*mc.State.SpeedMulti), int32(mc.State.VelocityY*mc.State.SpeedMulti))
+	}
+}
+
+// AccelerateAndScroll can be used for scrolling with acceleration physics
+func (mc *MouseController) AccelerateAndScroll(inputX, inputY float64) {
+	// We'll use the input for the Y direction only
+	mc.State.ScrollVelocityX, mc.State.ScrollVelocityY = mc.AccelerateVelocity(inputX, inputY, mc.State.ScrollMaxSpeed, mc.State.ScrollVelocityX, mc.State.ScrollVelocityY)
+	// Scroll if there's any velocity (only vertical)
+	if mc.State.ScrollVelocityY != 0 {
+		mc.Mouse.Wheel(false, int32(mc.State.ScrollVelocityY*mc.State.ScrollMulti))
+	}
+	if mc.State.ScrollVelocityX != 0 {
+		mc.Mouse.Wheel(true, int32(mc.State.ScrollVelocityX*mc.State.ScrollMulti))
 	}
 }
 
@@ -213,14 +254,16 @@ func (mc *MouseController) ToggleMouseMode() {
 
 	// Wiggle mouse to show it's active
 	if mc.State.MouseMode {
-		mc.Mouse.Move(1, 0)
+mc.Mouse = NewVirtualMouse()
+		mc.Mouse.Move(int32(mc.State.MaxSpeed), 0)
 		time.Sleep(50 * time.Millisecond)
-		mc.Mouse.Move(0, -2)
+		mc.Mouse.Move(int32(-mc.State.MaxSpeed), 0)
 	}
 
 	// Reset button states when toggling
 	if !mc.State.MouseMode {
 		mc.ResetButtons()
+mc.Mouse.Close()
 	}
 }
 
@@ -303,12 +346,9 @@ func NewEventProcessor(
 
 // ProcessEvent processes a single input event
 func (ep *EventProcessor) ProcessEvent(event *evdev.InputEvent, device *InputDevice) int {
-	if event.Type == EvMsc || event.Code == 0 {
-		return PassThruEvent
+	if event.Type != EvKey {
+		ep.Logger.Debug("Event: %+v\n", event)
 	}
-
-	ep.Logger.Debug("Device: %s\n", device.Name)
-	ep.Logger.Debug("Event: %+v\n", event)
 
 	// Get the key mapping for this device
 	km := ep.KeyMappingProvider.GetMapping(device.KeyboardType)
@@ -327,6 +367,9 @@ func (ep *EventProcessor) ProcessEvent(event *evdev.InputEvent, device *InputDev
 		// Toggle key for mouse mode
 		if event.Code == km.ToggleMouseKey {
 			ep.Logger.Debug("Toggle key pressed\n")
+			if event.Value == 2 {
+				return MuteEvent
+			}
 
 			// Record start time on key press
 			if event.Value == 1 {
@@ -384,7 +427,7 @@ func (ep *EventProcessor) ProcessEvent(event *evdev.InputEvent, device *InputDev
 		}
 		return MuteEvent
 
-	case km.ToggleScrollKey: // Drag toggle
+	case km.DragKey:
 		if event.Value == 1 {
 			ep.MouseController.ToggleDragMode()
 		}
@@ -408,27 +451,25 @@ func (ep *EventProcessor) ProcessEvent(event *evdev.InputEvent, device *InputDev
 
 	case km.ScrollUpKey:
 		// Wheel scrolling functionality
-		ep.MouseController.Mouse.Wheel(false, 1)
+		mouseState.ScrollUpActive = (event.Value != 0)
 		return MuteEvent
 
 	case km.ScrollDownKey:
 		// Wheel scrolling functionality
-		ep.MouseController.Mouse.Wheel(false, -1)
+		mouseState.ScrollDownActive = (event.Value != 0)
 		return MuteEvent
 
 	case km.ScrollRightKey:
 		// Horizontal wheel scrolling
-		ep.MouseController.Mouse.Wheel(true, 1)
+		mouseState.ScrollRightActive = (event.Value != 0)
 		return MuteEvent
 
 	case km.ScrollLeftKey:
 		// Horizontal wheel scrolling
-		ep.MouseController.Mouse.Wheel(true, -1)
+		mouseState.ScrollLeftActive = (event.Value != 0)
 		return MuteEvent
-
-	default:
-		return PassThruEvent
 	}
+return PassThruEvent
 }
 
 // DeviceManager manages input devices
@@ -495,7 +536,7 @@ func (dm *DeviceManager) FindInputDevices() error {
 // StartDeviceMonitoring starts monitoring all devices
 func (dm *DeviceManager) StartDeviceMonitoring() error {
 	for i, dev := range dm.Devices {
-		fmt.Printf("Monitoring device %d: %s\n", i, dev.Name)
+		fmt.Printf("Monitoring device %d: %s\n - %s\n", i, dev.Name, dev.Path)
 
 		err := dev.Device.Grab()
 		if err != nil {
@@ -508,6 +549,7 @@ func (dm *DeviceManager) StartDeviceMonitoring() error {
 
 	// Start the movement goroutine
 	go dm.processMovement()
+	go dm.processScroll()
 
 	return nil
 }
@@ -536,7 +578,7 @@ func (dm *DeviceManager) processDeviceEvents(device *InputDevice) {
 
 // processMovement handles continuous mouse movement based on key states
 func (dm *DeviceManager) processMovement() {
-	ticker := time.NewTicker(16 * time.Millisecond) // ~60fps
+	ticker := time.NewTicker((1000 / 60) * time.Millisecond) // ~60fps
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -550,24 +592,62 @@ func (dm *DeviceManager) processMovement() {
 		}
 
 		// Calculate input direction
-		inputX := float64(0)
-		inputY := float64(0)
+		moveInputX := float64(0)
+		moveInputY := float64(0)
 
 		if mouseState.LeftKeyActive {
-			inputX -= mouseState.MaxSpeed
+			moveInputX -= mouseState.MaxSpeed
 		}
 		if mouseState.RightKeyActive {
-			inputX += mouseState.MaxSpeed
+			moveInputX += mouseState.MaxSpeed
 		}
 		if mouseState.UpKeyActive {
-			inputY -= mouseState.MaxSpeed
+			moveInputY -= mouseState.MaxSpeed
 		}
 		if mouseState.DownKeyActive {
-			inputY += mouseState.MaxSpeed
+			moveInputY += mouseState.MaxSpeed
 		}
 
-		// Update velocity and move the mouse
-		dm.MouseController.AccelerateAndMove(inputX, inputY)
+		dm.MouseController.AccelerateAndMove(moveInputX, moveInputY)
+	}
+}
+
+func (dm *DeviceManager) processScroll() {
+	ticker := time.NewTicker((1000 / 10) * time.Millisecond) // ~10fps
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// check if ticker even or odd
+		mouseState := dm.MouseController.State
+
+		if !mouseState.MouseMode {
+			// Reset velocities when not in mouse mode
+			mouseState.ScrollVelocityX = 0
+			mouseState.ScrollVelocityY = 0
+			continue
+		}
+
+		// Calculate input direction
+		scrollInputX := float64(0)
+		scrollInputY := float64(0)
+		if mouseState.ScrollLeftActive {
+			scrollInputX += mouseState.ScrollMaxSpeed
+		}
+		if mouseState.ScrollRightActive {
+			scrollInputX -= mouseState.ScrollMaxSpeed
+		}
+		if mouseState.ScrollUpActive {
+			scrollInputY += mouseState.ScrollMaxSpeed
+		}
+		if mouseState.ScrollDownActive {
+			scrollInputY -= mouseState.ScrollMaxSpeed
+		}
+
+		// Currently too fast, not fine enough input
+		// dm.MouseController.AccelerateAndScroll(scrollInputX, scrollInputY)
+
+		dm.MouseController.Mouse.Wheel(false, int32(scrollInputY*mouseState.ScrollMulti))
+		dm.MouseController.Mouse.Wheel(true, int32(scrollInputX*mouseState.ScrollMulti))
 	}
 }
 

@@ -4,7 +4,13 @@ adb push ./build/goFlipMouse.zip /sdcard/Download
 adb shell su -c "magisk --install-module /sdcard/Download/goFlipMouse.zip"
 if [ $? -eq 0 ]; then
     echo "goFlipMouse installed successfully!"
-    echo "Reboot your device to apply the changes."
+    echo "Would you like to reboot now? (y/n)"
+    read -n 1 -r answer
+    
+    if [ "$answer" == "y" ]; then
+        echo "rebooting..."
+        adb shell reboot
+    fi
 else
     echo "mouse installation failed."
 fi
